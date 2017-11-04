@@ -1,6 +1,7 @@
 import NotificationService.{Notify, Subscribe}
 import akka.actor.{ActorSystem, Props}
 import akka.event.EventStream
+import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model._
 import akka.stream.scaladsl.{Flow, Keep, Sink, Source, Tcp}
@@ -46,18 +47,6 @@ object ListenerWithNotifications extends App {
 
     connection.handleWith(echoWithNotification)
   }
-
-  import akka.http.scaladsl.server.Directives._
-
-  val route =
-    path("notify" / IntNumber) { id =>
-      post {
-        entity(as[String]) { message =>
-          notificationService ! Notify(Notification(id, message))
-          complete(HttpResponse(StatusCodes.Accepted))
-        }
-      }
-    }
-
-  val bindingFuture = Http().bindAndHandle(route, "localhost", 8080)
+  
+  Http().bindAndHandle(NotificationRoute(notificationService), "localhost", 8080)
 }
