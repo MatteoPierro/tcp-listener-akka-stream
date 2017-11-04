@@ -1,15 +1,19 @@
-import akka.actor.ActorSystem
+import NotificationService.{Notify, Subscribe}
+import akka.actor.{ActorSystem, Props}
+import akka.event.EventStream
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.{ContentTypes, HttpEntity}
+import akka.http.scaladsl.model._
 import akka.stream.scaladsl.{Flow, Keep, Sink, Source, Tcp}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.ByteString
 
 object ListenerWithNotifications extends App {
 
-  implicit val system = ActorSystem("Listener")
-  implicit val materializer = ActorMaterializer()
+  implicit val system: ActorSystem = ActorSystem("Listener")
+  implicit val materializer: ActorMaterializer = ActorMaterializer()
 
+  val eventStream: EventStream = system.eventStream
+  val notificationService = system.actorOf(Props(new NotificationService(eventStream)))
 
   import akka.stream.scaladsl.Framing
 
@@ -22,8 +26,11 @@ object ListenerWithNotifications extends App {
       .toMat(Sink.asPublisher(fanout = false))(Keep.both)
       .run()
 
-    system.eventStream.subscribe(notificationActor, classOf[String])
+    val id = connection.remoteAddress.getPort
+    notificationService ! Subscribe(id, notificationActor)
+
     notificationActor ! "Welcome"
+    notificationActor ! s"send notification to http://localhost:8080/notify/$id"
 
     val notificationSource = Source.fromPublisher(notificationPublisher)
 
@@ -43,10 +50,12 @@ object ListenerWithNotifications extends App {
   import akka.http.scaladsl.server.Directives._
 
   val route =
-    path("hello") {
-      get {
-        system.eventStream.publish("hello from web")
-        complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, "<h1>Sent hello to tcp sockets</h1>"))
+    path("notify" / IntNumber) { id =>
+      post {
+        entity(as[String]) { message =>
+          notificationService ! Notify(Notification(id, message))
+          complete(HttpResponse(StatusCodes.Accepted))
+        }
       }
     }
 
