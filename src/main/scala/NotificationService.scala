@@ -1,5 +1,5 @@
 import NotificationService.{Notify, Subscribe}
-import akka.actor.{Actor, ActorRef, Props}
+import akka.actor.{Actor, ActorRef, PoisonPill, Props, Terminated}
 import akka.event.EventStream
 
 case class Notification(identifier: Int, message: String)
@@ -21,8 +21,13 @@ class NotificationService(eventStream: EventStream) extends Actor {
 }
 
 class Subscription(id: Int, subscriber: ActorRef) extends Actor {
+  context.watch(subscriber)
+
   override def receive: Receive = {
     case notification: Notification  if notification.identifier == id =>
       subscriber ! notification.message
+
+    case Terminated(actor) if actor == subscriber =>
+      self ! PoisonPill
   }
 }
